@@ -1,9 +1,8 @@
 extern crate rand;
 use std::collections::HashMap;
 use std::cmp;
-use std::str;
-use rand::{Rng, SeedableRng, StdRng};
-
+use rand::{SeedableRng, StdRng};
+/*
 #[derive(Debug)]
 enum RoomSide {
     North = 1,
@@ -45,7 +44,7 @@ struct Key {
     trigger: TriggerType,
     typ: KeyType
 }
-
+*/
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 struct RoomOffset {
     x: i32,
@@ -55,12 +54,22 @@ struct RoomOffset {
 #[derive(Debug)]
 struct Room {
     offset: RoomOffset,
-    doors: Vec<Door>,
-    enemies: Option<EnemySet>,
-    key: Option<Key>
+    //doors: Vec<Door>,
+    //enemies: Option<EnemySet>,
+    //key: Option<Key>
 }
 
 impl Room {
+
+    pub fn new(x: i32, y: i32) -> Room {
+        Room {
+            offset: RoomOffset {
+                x: x,
+                y: y
+            }
+        }
+    }
+
     pub fn draw(&self, draw_buffer: &mut DrawBuffer) {
         draw_buffer.draw_rect(self.offset.x, self.offset.y);
     }
@@ -86,54 +95,34 @@ impl Dungeon {
         }
     }
 
-    pub fn generate(&mut self, rng: &mut StdRng) {
+    pub fn generate(&mut self, rng: &mut StdRng, max_rooms: usize) {
 
-        let offset = RoomOffset { x: 2, y: 3 };
-        self.rooms.insert(offset, Room {
-            offset: offset,
-            doors: Vec::new(),
-            enemies: None,
-            key: None
-        });
+        let r = Room::new(2, 3);
+        self.rooms.insert(r.offset, r);
 
         let offset = RoomOffset { x: 2, y: 2 };
         self.rooms.insert(offset, Room {
-            offset: offset,
-            doors: Vec::new(),
-            enemies: None,
-            key: None
+            offset: offset
         });
 
         let offset = RoomOffset { x: 2, y: 1 };
         self.rooms.insert(offset, Room {
-            offset: offset,
-            doors: Vec::new(),
-            enemies: None,
-            key: None
+            offset: offset
         });
 
         let offset = RoomOffset { x: 1, y: 1 };
         self.rooms.insert(offset, Room {
-            offset: offset,
-            doors: Vec::new(),
-            enemies: None,
-            key: None
+            offset: offset
         });
 
         let offset = RoomOffset { x: 4, y: 2 };
         self.rooms.insert(offset, Room {
             offset: offset,
-            doors: Vec::new(),
-            enemies: None,
-            key: None
         });
 
         let offset = RoomOffset { x: 3, y: 2 };
         self.rooms.insert(offset, Room {
             offset: offset,
-            doors: Vec::new(),
-            enemies: None,
-            key: None
         });
 
     }
@@ -147,7 +136,7 @@ impl Dungeon {
         let mut min = RoomOffset { x: 9999, y: 9999 };
         let mut max = RoomOffset { x: -9999, y: -9999 };
 
-        for (offset, room) in self.rooms.iter() {
+        for (offset, _) in self.rooms.iter() {
             min.x = cmp::min(offset.x, min.x);
             min.y = cmp::min(offset.y, min.y);
             max.x = cmp::max(offset.x, max.x);
@@ -165,12 +154,12 @@ impl Dungeon {
             height as usize,
             min.x,
             min.y,
-            8,
-            4
+            12,
+            6
         );
 
         // Draw rooms into buffer
-        for (offset, room) in self.rooms.iter() {
+        for (_, room) in self.rooms.iter() {
             room.draw(&mut draw_buffer);
         }
 
@@ -197,7 +186,7 @@ impl DrawBuffer {
 
         let size = width * sx * height * sy;
         let mut buffer: Vec<char> = Vec::with_capacity(size);
-        for i in 0..size {
+        for _ in 0..size {
             buffer.push(b' ' as char);
         }
 
@@ -221,16 +210,16 @@ impl DrawBuffer {
         let sy = self.sy;
 
         // Lines
-        self.draw_hline(y * sy, x * sx, x * sx + sx - 2, '\u{2501}');
-        self.draw_hline(y * sy + sy - 2, x * sx, x * sx + sx - 2, '\u{2501}');
+        self.draw_hline(y * sy, x * sx, x * sx + sx - 3, '\u{2501}');
+        self.draw_hline(y * sy + sy - 2, x * sx, x * sx + sx - 3, '\u{2501}');
         self.draw_vline(x * sx, y * sy, y * sy + sy - 1, '\u{2503}');
-        self.draw_vline(x * sx + sx - 2, y * sy, y * sy + sy - 1, '\u{2503}');
+        self.draw_vline(x * sx + sx - 3, y * sy, y * sy + sy - 1, '\u{2503}');
 
         // Corners
         self.buffer[y * sy * self.width * self.sx + x * sx] = '\u{250f}';
-        self.buffer[y * sy * self.width * self.sx + x * sx + sx - 2] = '\u{2513}';
+        self.buffer[y * sy * self.width * self.sx + x * sx + sx - 3] = '\u{2513}';
         self.buffer[(y * sy + sy - 2) * self.width * self.sx + x * sx] = '\u{2517}';
-        self.buffer[(y * sy + sy - 2) * self.width * self.sx + x * sx + sx - 2] = '\u{251b}';
+        self.buffer[(y * sy + sy - 2) * self.width * self.sx + x * sx + sx - 3] = '\u{251b}';
 
     }
 
@@ -263,7 +252,7 @@ fn main() {
     let mut rng: StdRng = SeedableRng::from_seed(seed);
 
     let mut dungeon = Dungeon::new();
-    dungeon.generate(&mut rng);
+    dungeon.generate(&mut rng, 12);
     dungeon.print();
 
 }
