@@ -125,13 +125,25 @@ struct Door {
     to: Offset
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 enum RoomType {
     End,
     Corridor,
     Intersection,
     Crossing,
     Invalid
+}
+
+impl RoomType {
+    pub fn to_string(&self) -> String {
+        match *self {
+            RoomType::End => "End".to_owned(),
+            RoomType::Corridor => "Cor".to_owned(),
+            RoomType::Intersection => "Int".to_owned(),
+            RoomType::Crossing => "Cross".to_owned(),
+            RoomType::Invalid => "Inv".to_owned()
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -161,6 +173,9 @@ impl Room {
         for d in self.doors.iter() {
             draw_buffer.draw_connection(self.offset.x, self.offset.y, d.side);
         }
+        draw_buffer.draw_text(
+            self.offset.x, self.offset.y, 1, 1, &self.typ.to_string()[..]
+        );
     }
 
     pub fn add_door_to(&mut self, other: &Room) {
@@ -249,10 +264,8 @@ impl Dungeon {
     }
 
     fn calculate_paths(&mut self) {
-        // Flag room as:
-        // - End (one door)
-        // - Corridor (2 doors)
-        // - Interconnect (more than 2 doors)
+
+        // Set room types
         for (_, room) in self.rooms.iter_mut() {
             room.typ = match room.doors.len() {
                 1 => RoomType::End,
@@ -263,7 +276,53 @@ impl Dungeon {
             };
         }
 
-        // Calculate distances to
+        // Calculate distances to next intersection / crossing
+        let mut end_offsets: Vec<Offset> = Vec::new();
+        for (offset, room) in self.rooms.iter_mut() {
+            if room.typ == RoomType::End {
+                end_offsets.push(*offset);
+            }
+        }
+
+        for offset in end_offsets {
+            self.visit_rooms(offset, |offset, path| {
+                false
+            });
+        }
+
+    }
+
+    fn visit_rooms<F>(&mut self, start: Offset, callback: F) -> Option<Vec<Offset>>
+        where F : Fn(&Offset, &Vec<Offset>) -> bool {
+
+        let mut visited: HashMap<Offset, bool> = HashMap::new();
+        let mut to_visit: Vec<(Offset, Vec<Offset>)> = vec![(start, vec![start])];
+        while to_visit.len() > 0 {
+
+            // Add current room to visited list
+            let (offset, path) = to_visit.remove(0);
+            let room = self.rooms.get(&offset).unwrap();
+            visited.insert(offset, true);
+
+            // Invoke callback and return the path if it returns true
+            if callback(&offset, &path) == true {
+                return Some(path);
+            }
+
+            // Add all connected rooms to the to_visit list
+            for d in room.doors.iter() {
+                if visited.contains_key(&d.to) == false  {
+                    let mut to_path = path.clone();
+                    to_path.push(d.to);
+                    to_visit.push((d.to, to_path));
+                    visited.insert(d.to, true);
+                }
+            }
+
+        }
+
+        None
+
     }
 
     fn create_rooms(&mut self, rng: &mut StdRng, max_rooms: usize) {
@@ -281,7 +340,6 @@ impl Dungeon {
             let rooms_to_drop = rng.gen_range(0, 1 + room_stack.len() / 2);
             if rooms_to_drop > 0 {
 
-                println!("drop count is: {}", rooms_to_drop);
                 for _ in 0..rooms_to_drop - 1 {
                     room_stack.pop();
                 }
@@ -314,7 +372,6 @@ impl Dungeon {
                     // No free adjacent space was found, break out and continue from another
                     // position in the stack
                     if next_dir == Direction::Invalid {
-                        println!("overlapping room without any free direction: {:?}", offset);
                         break;
 
                     // Found a free direction, continue there
@@ -336,7 +393,6 @@ impl Dungeon {
                 cor_length -= 1;
 
                 // Create new room at current offset
-                println!("Create Room: {:?} ({:?})", offset, next_dir);
                 let mut room = Room::new(offset.x, offset.y);
 
                 // Connect it with the previous room
@@ -358,7 +414,6 @@ impl Dungeon {
                 if cor_length == 0 || variance < 100 {
                     next_dir = Direction::from_i32(rng.gen_range(0, 4));
                     cor_length = rng.gen_range(1, max_corridor_length);
-                    println!("End of corridor. Next one will be {:?}, length {:?}", next_dir, cor_length);
                 }
 
             }
@@ -434,7 +489,16 @@ impl DrawBuffer {
 
     }
 
-    pub fn draw_text(&mut self, x: i32, y: i32, text: &str) {
+    pub fn draw_text(&mut self, x: i32, y: i32, ox: usize, oy: usize, text: &str) {
+
+        let x = (x - self.ox) as usize;
+        let y = (y - self.oy) as usize;
+        let sx = self.sx;
+        let sy = self.sy;
+
+        for (index, t) in text.chars().enumerate() {
+            self.buffer[(y * sy + oy) * self.width * self.sx + x * sx + ox + index] = t;
+        }
 
     }
 
