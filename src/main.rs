@@ -105,10 +105,11 @@ impl EnemySet {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 enum TriggerType {
     None,
-    Key,
+    SmallKey,
+    BossKey,
     KillEnemies,
     Chest,
     Pot,
@@ -119,13 +120,27 @@ impl TriggerType {
     pub fn to_string(&self) -> String {
         match *self {
             TriggerType::None => "None".to_owned(),
-            TriggerType::Key => "Key".to_owned(),
+            TriggerType::SmallKey => "SmllKey".to_owned(),
+            TriggerType::BossKey => "BossKey".to_owned(),
             TriggerType::KillEnemies => "Enmy".to_owned(),
             TriggerType::Chest => "Chst".to_owned(),
             TriggerType::Pot => "Pot".to_owned(),
             TriggerType::Switch => "Swth".to_owned()
         }
     }
+
+    pub fn to_char(&self) -> char {
+        match *self {
+            TriggerType::None => ' ',
+            TriggerType::SmallKey => 'L',
+            TriggerType::BossKey => 'B',
+            TriggerType::KillEnemies => 'E',
+            TriggerType::Chest => 'C',
+            TriggerType::Pot => 'P',
+            TriggerType::Switch => 'S'
+        }
+    }
+
 }
 
 #[derive(Debug)]
@@ -212,7 +227,7 @@ impl Room {
     pub fn draw(&self, draw_buffer: &mut DrawBuffer) {
         draw_buffer.draw_rect(self.offset.x, self.offset.y);
         for d in self.doors.iter() {
-            draw_buffer.draw_connection(self.offset.x, self.offset.y, d.side);
+            draw_buffer.draw_connection(self.offset.x, self.offset.y, d.side, d.trigger.to_char());
         }
 
         match self.typ {
@@ -241,6 +256,17 @@ impl Room {
             },
             None => {}
         }
+    }
+
+    pub fn get_door_to_offset_mut(&mut self, to: &Offset) -> Option<&mut Door> {
+
+        let side = Direction::from_offsets(&self.offset, to);
+
+        self.doors.iter_mut().filter(|d| {
+            d.side == side
+
+        }).next()
+
     }
 
     pub fn add_door_to(&mut self, other: &Room) {
@@ -328,14 +354,36 @@ impl Dungeon {
         self.create_rooms(rng, max_rooms);
 
         if self.find_special_rooms(rng) == false {
-            return false
+            return false;
+
+        } else if self.place_key_doors(rng) == false {
+            return false;
         }
+
+        // TODO from the entrance find all accessible locked doors
+            // - place keys in the empty, accessible rooms infront of them
+                // - prioritize end rooms for key placement
+                    // - remove some rooms from the set of empty rooms but not the end rooms
+                    // - then shuffle set set and use the first X to
+                // - mark the found doors as done
+
+            // - find the next set of accessible doors
+        // - continue until no more locked doors are left
+
+
+        // TODO Create some additional interconnections of adjacent AND inter-reachable rooms
+        true
+
+    }
+
+    fn place_key_doors(&mut self, rng: &mut StdRng) -> bool {
 
         // Get path from entrance to boss key
         let mut boss_key_path = self.get_boss_key_path();
 
         // Get path from entrance to boss door
         let mut boss_door_path = self.get_boss_door_path();
+        boss_door_path.pop(); // Don't override the boss door
 
         // Extract shared boss path
         let mut shared_boss_path = Vec::new();
@@ -346,17 +394,96 @@ impl Dungeon {
         }
 
         // Drop shared path elements
-        for _ in 0..shared_boss_path.len() {
+        for _ in 0..shared_boss_path.len() - 1 {
             boss_key_path.remove(0);
             boss_door_path.remove(0);
         }
 
-        println!("{:?}\n", shared_boss_path);
-        println!("{:?}\n", boss_key_path);
-        println!("{:?}\n", boss_door_path);
+        // Get total number of locked doors to place
+        let empty_room_count = self.find_empty_rooms().len();
+        let door_count = empty_room_count / 4 + rng.gen_range(0, 1);
 
-        // TODO Create some additional interconnections of adjacent AND inter-reachable rooms
-        // TODO generate doors first to prevent shortcuts from generating
+        fn to_connected_path(path: RoomPath) -> Vec<(Offset, Offset)> {
+            // Convert everything into a connect path
+            let mut connected_path = Vec::new();
+            if path.len() > 1 {
+                for i in 0..path.len() - 1 {
+                    connected_path.push((path[i], path[i + 1]));
+                }
+            }
+            connected_path
+        }
+
+        // Randomize paths
+        let mut paths = vec![
+            to_connected_path(shared_boss_path),
+            to_connected_path(boss_key_path),
+            to_connected_path(boss_door_path)
+        ];
+
+        // Prioritize the longer paths for door placement
+        paths.sort_by(|a, b| {
+            b.len().cmp(&a.len())
+        });
+
+        let mut path_index = 0;
+        let mut path_count = paths.len();
+        let mut doors_locked = 0;
+        let mut doors_on_path = vec![0, 0, 0];
+
+        // Try to lock the required number of doors
+        while path_count > 0 && doors_locked < door_count {
+
+            // Select the next available path
+            let empty = {
+
+                let mut path = &mut paths[path_index % path_count];
+
+                // Get the all empty rooms from the current path
+                if path.len() > 1 {
+
+                    // If so, place a door on somewhere on the path
+                    let door_index = rng.gen_range(0, path.len());
+                    doors_on_path[path_index % path_count] += 1;
+
+                    // Place locked door between the selected room and the one
+                    // that comes after it on the path
+                    let room = self.rooms.get_mut(&path[door_index].0).unwrap();
+                    let door = room.get_door_to_offset_mut(&path[door_index].1).unwrap();
+                    door.trigger = TriggerType::SmallKey;
+
+                    doors_locked += 1;
+
+                    // Remove the used room from the path
+                    path.remove(door_index);
+
+                    // Calculate the ratio of path len and door count
+                    // we want longer paths to have more doors so we achieve
+                    // a more even distribution
+                    let door_ratio = path.len() / doors_on_path[path_index % path_count];
+                    if door_ratio < 2 {
+                        path_index += 1;
+                    }
+
+                }
+
+                path.len() == 1
+
+            };
+
+            if empty {
+                paths.remove(path_index % path_count);
+                path_count -= 1;
+            }
+
+        }
+
+        // Check if we could place all the doors
+        if doors_locked != door_count {
+            println!("Failed to lock the required number of doors!");
+            return false;
+        }
+
         true
 
     }
@@ -376,7 +503,7 @@ impl Dungeon {
 
     }
 
-    fn get_boss_door_path(&mut self) -> RoomPath {
+    fn get_boss_door_path(&self) -> RoomPath {
 
         // Get path from entrance to boss room
         self.visit_rooms(self.entrance_room.unwrap(), |room, path| {
@@ -408,12 +535,13 @@ impl Dungeon {
         }
 
     }
+    */
 
-    fn find_empty_rooms(&mut self) -> Vec<Offset> {
+    fn find_empty_rooms(&self) -> Vec<Offset> {
 
         let mut empty_rooms: Vec<Offset> = Vec::new();
 
-        for (offset, room) in self.rooms.iter_mut() {
+        for (offset, room) in self.rooms.iter() {
             if room.typ == RoomType::Exit {
                 continue;
 
@@ -428,6 +556,8 @@ impl Dungeon {
             }
         }
 
+        // HashMap iteration order is random, but we need the rooms to be
+        // deterministic
         empty_rooms.sort_by(|a, b| {
             (a.x + a.y * 1000).cmp(&(b.x + b.y * 1000))
         });
@@ -435,7 +565,6 @@ impl Dungeon {
         empty_rooms
 
     }
-    */
 
     fn find_special_rooms(&mut self, rng: &mut StdRng) -> bool {
 
@@ -465,7 +594,7 @@ impl Dungeon {
 
         // Set Exit room
         {
-            if (ends[1].len() <= 1) {
+            if ends[1].len() <= 1 {
                 println!("Fatal: there must be at least 2 rooms on the exit path, so we can place the boss room infront of it");
                 return false;
             }
@@ -482,6 +611,14 @@ impl Dungeon {
                 return false;
             }
             boss_room.enemy_set = Some(EnemySet::Boss);
+
+        }
+
+        // Lock the room to the boss door with a big key
+        {
+            let mut before_boss_room = self.rooms.get_mut(&ends[1][2]).unwrap();
+            let door = before_boss_room.get_door_to_offset_mut(&ends[1][1]).unwrap();
+            door.trigger = TriggerType::BossKey;
         }
 
         // Set Boss Key Room
@@ -517,6 +654,12 @@ impl Dungeon {
                 self.end_rooms.push(*offset);
             }
         }
+
+        // HashMap iteration order is random, but we need the rooms to be
+        // deterministic
+        self.end_rooms.sort_by(|a, b| {
+            (a.x + a.y * 1000).cmp(&(b.x + b.y * 1000))
+        });
 
     }
 
@@ -721,7 +864,7 @@ impl DrawBuffer {
 
     }
 
-    pub fn draw_connection(&mut self, x: i32, y: i32, d: Direction) {
+    pub fn draw_connection(&mut self, x: i32, y: i32, d: Direction, m: char) {
 
         let x = (x - self.ox) as usize;
         let y = (y - self.oy) as usize;
@@ -730,17 +873,21 @@ impl DrawBuffer {
 
         match d {
             Direction::North => {
-                self.buffer[y * sy * self.width * self.sx + x * sx + 7] = '\u{2580}';
-                self.buffer[(y * sy - 1) * self.width * self.sx + x * sx + 7] = '\u{2588}';
+                self.buffer[y * sy * self.width * self.sx + x * sx + 8] = '\u{2580}';
+                self.buffer[(y * sy - 1) * self.width * self.sx + x * sx + 8] = '\u{2588}';
+                self.buffer[(y * sy + 1) * self.width * self.sx + x * sx + 8] = m;
             },
             Direction::East => {
+                self.buffer[(y * sy + 3) * self.width * self.sx + x * sx + sx - 4] = m;
                 self.buffer[(y * sy + 3) * self.width * self.sx + x * sx + sx - 3] = '\u{2590}';
                 self.buffer[(y * sy + 3) * self.width * self.sx + x * sx + sx - 2] = '\u{2588}';
             },
             Direction::South => {
-                self.buffer[(y * sy + sy - 2) * self.width * self.sx + x * sx + 7] = '\u{2584}';
+                self.buffer[(y * sy + sy - 2) * self.width * self.sx + x * sx + 8] = '\u{2584}';
+                self.buffer[(y * sy + sy - 3) * self.width * self.sx + x * sx + 8] = m;
             },
             Direction::West => {
+                self.buffer[(y * sy + 3) * self.width * self.sx + x * sx + 1] = m;
                 self.buffer[(y * sy + 3) * self.width * self.sx + x * sx] = '\u{258C}';
                 self.buffer[(y * sy + 3) * self.width * self.sx + x * sx - 1] = '\u{2588}';
             },
@@ -808,6 +955,7 @@ impl DrawBuffer {
 fn main() {
 
     let seed: &[_] = &[1, 2, 3, 8];
+    //let seed: &[_] = &[1, 2, 3, 4];
     let mut rng: StdRng = SeedableRng::from_seed(seed);
 
     let mut tries = 0;
