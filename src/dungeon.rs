@@ -98,7 +98,7 @@ impl Dungeon {
         }
 
         // Drop shared path elements
-        for _ in 0..shared_boss_path.len() - 1 {
+        for _ in 0..shared_boss_path.len() - 2 {
             boss_key_path.remove(0);
             boss_door_path.remove(0);
         }
@@ -147,15 +147,21 @@ impl Dungeon {
                 if path.len() > 1 {
 
                     // If so, place a door on somewhere on the path
-                    let door_index = rng.gen_range(0, path.len());
-                    doors_on_path[path_index % path_count] += 1;
+                    let door_index = rng.gen_range(0, 255) % path.len();
 
                     // Place locked door between the selected room and the one
                     // that comes after it on the path
                     let room = self.rooms.get_mut(&path[door_index].0).unwrap();
                     let door = room.get_door_to_offset_mut(&path[door_index].1).unwrap();
-                    door.trigger = Trigger::SmallKey;
 
+                    // Do not use the same door twice
+                    if door.trigger != Trigger::None {
+                        return false;
+                    }
+
+                    // Set trigger and lock the door
+                    door.trigger = Trigger::SmallKey;
+                    doors_on_path[path_index % path_count] += 1;
                     doors_locked += 1;
 
                     // Remove the used room from the path
@@ -171,7 +177,7 @@ impl Dungeon {
 
                 }
 
-                path.len() == 1
+                path.len() <= 1
 
             };
 
