@@ -10,9 +10,9 @@ A side project for randomly generating Zelda esque dungeons.
 
 ## Status
 
-- Initial Room Layout
-- Placement of Entrance / Boss Key / Boss Room / Exit
-- Placement of Locked Doors which require Small Keys
+- Initial Room Layout ✓
+- Placement of Entrance / Boss Key / Boss Room / Exit ✓
+- Placement of Locked Doors which require Small Keys ✓
 - Placement of Small Keys (In pots, chests, killing all enemies)
 - Placement of other things
 - Shortcut creation with bombable walls
