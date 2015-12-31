@@ -5,3 +5,8 @@ authors = ["Ivo Wetzel <ivo.wetzel@googlemail.com>"]
 
 [dependencies]
 rand = "0.3.0"
+
+[lib]
+name = "dungeon"
+path = "src/lib.rs"
+
