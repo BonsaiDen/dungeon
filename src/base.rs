@@ -11,7 +11,7 @@ pub enum Side {
 
 impl Side {
 
-    pub fn get_all() -> Vec<Side> {
+    pub fn all() -> Vec<Side> {
         vec![
             Side::North,
             Side::East,
