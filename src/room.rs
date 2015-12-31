@@ -7,27 +7,27 @@ use key::Key;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Type {
-    End,
+    None,
+    Entrance,
+    Exit,
     Hallway,
     Intersection,
     Crossing,
-    Entrance,
-    Exit,
-    Invalid,
-    None
+    End,
+    Invalid
 }
 
 impl Type {
     pub fn to_string(&self) -> String {
         match *self {
-            Type::End => "End",
+            Type::None => "",
+            Type::Entrance => "Entrance",
+            Type::Exit => "Exit",
             Type::Hallway => "Hallway",
             Type::Intersection => "Intersection",
             Type::Crossing => "Crossway",
-            Type::Entrance => "Entrance",
-            Type::Exit => "Exit",
-            Type::Invalid => "Invalid",
-            Type::None => ""
+            Type::End => "End",
+            Type::Invalid => "Invalid"
 
         }.to_owned()
     }

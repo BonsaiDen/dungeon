@@ -1,6 +1,6 @@
 use std::ops::Add;
 
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Side {
     North = 0,
     East = 1,

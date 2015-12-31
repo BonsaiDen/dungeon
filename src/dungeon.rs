@@ -120,19 +120,21 @@ impl Dungeon {
 
                     next_dir = Side::None;
 
-                    // Try all possible sides to find a free adjacend location
+                    // Try all possible sides in random order to find a free
+                    // adjacent location
                     let mut sides = Side::all();
                     rng.shuffle(&mut sides);
+
                     for d in sides.iter() {
                         next_offset = offset + d.to_offset();
                         if self.rooms.contains_key(&next_offset) == false{
-                            next_dir = *d;
+                            next_dir = d.clone();
                             break;
                         }
                     }
 
-                    // No free adjacent space was found, break out and continue from another
-                    // position in the stack
+                    // No free adjacent space was found, break out and continue
+                    // from a previous room position in the stack
                     if next_dir == Side::None {
                         break;
 
@@ -288,7 +290,7 @@ impl Dungeon {
             a == b
 
         }) {
-            shared_boss_path.push(offset.clone());
+            shared_boss_path.push(*offset);
         }
 
         // Drop shared path elements

@@ -69,8 +69,12 @@ impl Renderer {
         }
     }
 
+    // Internal ---------------------------------------------------------------
+    //
     fn new(
-        width: usize, height: usize, ox: i32, oy: i32, sx: usize, sy: usize
+        width: usize, height: usize,
+        ox: i32, oy: i32,
+        sx: usize, sy: usize
 
     ) -> Renderer {
 
@@ -92,57 +96,11 @@ impl Renderer {
 
     }
 
-    fn draw_door(&mut self, x: i32, y: i32, d: Side, m: char) {
-
-        let x = (x - self.ox) as usize;
-        let y = (y - self.oy) as usize;
-        let sx = self.sx;
-        let sy = self.sy;
-
-        match d {
-            Side::North => {
-                self.buffer[y * sy * self.width * self.sx + x * sx + 8] = '\u{2580}';
-                self.buffer[(y * sy - 1) * self.width * self.sx + x * sx + 8] = '\u{2588}';
-                self.buffer[(y * sy + 1) * self.width * self.sx + x * sx + 8] = m;
-            },
-            Side::East => {
-                self.buffer[(y * sy + 3) * self.width * self.sx + x * sx + sx - 4] = m;
-                self.buffer[(y * sy + 3) * self.width * self.sx + x * sx + sx - 3] = '\u{2590}';
-                self.buffer[(y * sy + 3) * self.width * self.sx + x * sx + sx - 2] = '\u{2588}';
-            },
-            Side::South => {
-                self.buffer[(y * sy + sy - 2) * self.width * self.sx + x * sx + 8] = '\u{2584}';
-                self.buffer[(y * sy + sy - 3) * self.width * self.sx + x * sx + 8] = m;
-            },
-            Side::West => {
-                self.buffer[(y * sy + 3) * self.width * self.sx + x * sx + 1] = m;
-                self.buffer[(y * sy + 3) * self.width * self.sx + x * sx] = '\u{258C}';
-                self.buffer[(y * sy + 3) * self.width * self.sx + x * sx - 1] = '\u{2588}';
-            },
-            _ => {}
-        }
-
-    }
-
-    fn draw_text(&mut self, x: i32, y: i32, ox: usize, oy: usize, text: &str) {
-
-        let x = (x - self.ox) as usize;
-        let y = (y - self.oy) as usize;
-        let sx = self.sx;
-        let sy = self.sy;
-
-        for (index, t) in text.chars().enumerate() {
-            self.buffer[(y * sy + oy) * self.width * self.sx + x * sx + ox + index] = t;
-        }
-
-    }
-
     fn draw_room(&mut self, room: &room::Room) {
 
         let x = (room.offset.x - self.ox) as usize;
         let y = (room.offset.y - self.oy) as usize;
-        let sx = self.sx;
-        let sy = self.sy;
+        let (sx, sy) = (self.sx, self.sy);
 
         // Lines
         self.draw_hline(y * sy, x * sx, x * sx + sx - 3, '\u{2501}');
@@ -159,7 +117,7 @@ impl Renderer {
         // Doors
         for d in room.doors.iter() {
             self.draw_door(
-                room.offset.x, room.offset.y, d.side, d.trigger.to_char()
+                room.offset.x, room.offset.y, &d.side, d.trigger.to_char()
             );
         }
 
@@ -197,6 +155,47 @@ impl Renderer {
                 );
             },
             None => {}
+        }
+
+    }
+
+    fn draw_door(&mut self, x: i32, y: i32, d: &Side, m: char) {
+
+        let (x, y) = ((x - self.ox) as usize, (y - self.oy) as usize);
+        let (sx, sy) = (self.sx, self.sy);
+
+        match *d {
+            Side::North => {
+                self.buffer[y * sy * self.width * self.sx + x * sx + 8] = '\u{2580}';
+                self.buffer[(y * sy - 1) * self.width * self.sx + x * sx + 8] = '\u{2588}';
+                self.buffer[(y * sy + 1) * self.width * self.sx + x * sx + 8] = m;
+            },
+            Side::East => {
+                self.buffer[(y * sy + 3) * self.width * self.sx + x * sx + sx - 4] = m;
+                self.buffer[(y * sy + 3) * self.width * self.sx + x * sx + sx - 3] = '\u{2590}';
+                self.buffer[(y * sy + 3) * self.width * self.sx + x * sx + sx - 2] = '\u{2588}';
+            },
+            Side::South => {
+                self.buffer[(y * sy + sy - 2) * self.width * self.sx + x * sx + 8] = '\u{2584}';
+                self.buffer[(y * sy + sy - 3) * self.width * self.sx + x * sx + 8] = m;
+            },
+            Side::West => {
+                self.buffer[(y * sy + 3) * self.width * self.sx + x * sx + 1] = m;
+                self.buffer[(y * sy + 3) * self.width * self.sx + x * sx] = '\u{258C}';
+                self.buffer[(y * sy + 3) * self.width * self.sx + x * sx - 1] = '\u{2588}';
+            },
+            _ => {}
+        }
+
+    }
+
+    fn draw_text(&mut self, x: i32, y: i32, ox: usize, oy: usize, text: &str) {
+
+        let (x, y) = ((x - self.ox) as usize, (y - self.oy) as usize);
+        let (sx, sy) = (self.sx, self.sy);
+
+        for (index, t) in text.chars().enumerate() {
+            self.buffer[(y * sy + oy) * self.width * self.sx + x * sx + ox + index] = t;
         }
 
     }
