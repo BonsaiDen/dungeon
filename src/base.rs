@@ -1,5 +1,6 @@
 use std::ops::{Add, Sub};
 
+// TODO support up / down
 #[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
 pub enum Side {
     North = 0,

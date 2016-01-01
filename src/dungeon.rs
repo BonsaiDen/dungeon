@@ -4,17 +4,20 @@ use std::cmp;
 use std::collections::HashMap;
 use self::rand::{Rng, SeedableRng, StdRng};
 
-use room;
-use key;
 use base::{Side, Offset};
-use trigger::Trigger;
-use enemy::Enemy;
+use room::{Room, Path as RoomPath, Type as RoomType};
+use room::door::{Door, Lock as DoorLock};
+use entity::chest::Chest;
+use entity::item::{Item, Key};
+use entity::enemy::{Enemy, Type as EnemyType};
+use entity::switch::Switch;
+use entity::trigger::Trigger;
 
 pub struct Dungeon {
     entrance_room: Option<Offset>,
     boss_room: Option<Offset>,
     exit_room: Option<Offset>,
-    pub rooms: HashMap<Offset, room::Room>
+    pub rooms: HashMap<Offset, Room>
 }
 
 impl Dungeon {
@@ -72,9 +75,11 @@ impl Dungeon {
             return false;
 
         } else {
-            // TODO place compass / map
-            // TODO Create some additional interconnections of
-            // adjacent AND inter-reachable rooms
+            // TODO place compass / map in chests
+            // TODO place enemies in rooms
+            // TODO place other door locks
+            // TODO Create some additional shortcuts between rooms (both rooms need to reach each
+            // other without requiring small keys)
             true
         }
 
@@ -86,8 +91,8 @@ impl Dungeon {
         let mut next_dir = Side::from_i32(rng.gen_range(0, 4));
         let mut hall_length = rng.gen_range(1, max_corridor_length);
         let mut offset = Offset::default();
-        let mut room_stack = room::Path::new();
-        let mut rooms: HashMap<Offset, room::Room> = HashMap::new();
+        let mut room_stack = RoomPath::new();
+        let mut rooms: HashMap<Offset, Room> = HashMap::new();
 
         // Try to generate the requested number of rooms
         let mut index = 0;
@@ -156,7 +161,7 @@ impl Dungeon {
 
                 // Create new room at current offset and connect it
                 // with the previous room
-                let mut room = room::Room::new(offset.x, offset.y);
+                let mut room = Room::new(offset.x, offset.y);
                 match room_stack.last() {
                     Some(offset) => {
                         let other = rooms.get_mut(&offset).unwrap();
@@ -192,11 +197,11 @@ impl Dungeon {
         // Set room connection types
         for (_, room) in rooms.iter_mut() {
             room.typ = match room.doors.len() {
-                1 => room::Type::End,
-                2 => room::Type::Hallway,
-                3 => room::Type::Intersection,
-                4 => room::Type::Crossing,
-                _ => room::Type::Invalid
+                1 => RoomType::End,
+                2 => RoomType::Hallway,
+                3 => RoomType::Intersection,
+                4 => RoomType::Crossing,
+                _ => RoomType::Invalid
             };
         }
 
@@ -244,7 +249,7 @@ impl Dungeon {
         // Set Entrance
         {
             let mut entrance_room = self.rooms.get_mut(&ends[0][0]).unwrap();
-            entrance_room.typ = room::Type::Entrance;
+            entrance_room.typ = RoomType::Entrance;
             self.entrance_room = Some(entrance_room.offset);
         }
 
@@ -255,7 +260,7 @@ impl Dungeon {
                 return false;
             }
             let mut exit_room = self.rooms.get_mut(&ends[1][0]).unwrap();
-            exit_room.typ = room::Type::Exit;
+            exit_room.typ = RoomType::Exit;
             self.exit_room = Some(exit_room.offset);
         }
 
@@ -267,7 +272,16 @@ impl Dungeon {
                 println!("Fatal: boss room may not be a intersection");
                 return false;
             }
-            boss_room.enemy = Some(Enemy::Boss);
+            boss_room.enemy = Some(Enemy {
+                typ: EnemyType::Boss,
+                item: Item::None,
+                trigger: Trigger {
+                    // TODO lock door to exit room and add trigger to boss to open it
+                    door: None,
+                    key: None,
+                    stored: true // Boss triggers are permanene
+                }
+            });
             self.boss_room = Some(boss_room.offset);
 
         }
@@ -276,15 +290,14 @@ impl Dungeon {
         {
             let mut before_boss_room = self.rooms.get_mut(&ends[1][2]).unwrap();
             let door = before_boss_room.get_door_to_offset_mut(&ends[1][1]).unwrap();
-            door.trigger = Trigger::BossKey;
+            door.lock = DoorLock::BossKey;
         }
 
         // Set Boss Key Room
         {
             let mut boss_key_room = self.rooms.get_mut(&ends[2][0]).unwrap();
-            boss_key_room.key = Some(key::Key {
-                trigger: Trigger::Chest,
-                typ: key::Type::Boss
+            boss_key_room.chest = Some(Chest {
+                item: Item::Key(Key::Boss)
             });
         }
 
@@ -302,7 +315,7 @@ impl Dungeon {
         boss_door_path.pop(); // Don't override the boss door
 
         // Extract shared boss path
-        let mut shared_boss_path = room::Path::new();
+        let mut shared_boss_path = RoomPath::new();
         for (offset, _) in boss_key_path.iter().zip(
             boss_door_path.iter()
 
@@ -360,13 +373,13 @@ impl Dungeon {
                     let room = self.rooms.get_mut(&path[door_index].0).unwrap();
                     let door = room.get_door_to_offset_mut(&path[door_index].1).unwrap();
 
-                    // Do not use the same door twice
-                    if door.trigger != Trigger::None {
+                    // Do not use lock the same door twice
+                    if door.lock != DoorLock::None {
                         return false;
                     }
 
                     // Set trigger and lock the door
-                    door.trigger = Trigger::SmallKey;
+                    door.lock = DoorLock::SmallKey;
                     doors_on_path[index] += 1;
                     doors_locked += 1;
 
@@ -408,7 +421,7 @@ impl Dungeon {
     fn set_locked_keys(&mut self, rng: &mut StdRng) -> bool {
 
         // Keep track of the doors that we have unlocked
-        let mut unlocked_doors: HashMap<room::Door, bool> = HashMap::new();
+        let mut unlocked_doors: HashMap<Door, bool> = HashMap::new();
         let mut rooms_with_key: Vec<Offset> = Vec::new();
 
         loop {
@@ -418,11 +431,11 @@ impl Dungeon {
             let rooms = self.connected_rooms(self.entrance_room.unwrap(), |_, door| {
 
                 // Always stop at the boss door
-                if door.trigger == Trigger::BossKey {
-                    true
+                if door.lock == DoorLock::BossKey {
+                    false
 
                 // See if the door is locked
-                } else if door.trigger == Trigger::SmallKey {
+                } else if door.lock == DoorLock::SmallKey {
 
                     // See if we already unlocked it, if so we can continue
                     // with the room behind it
@@ -434,7 +447,7 @@ impl Dungeon {
                         false
                     }
 
-                // For all open doors visiti the room behind them
+                // For all open doors visit the room behind them
                 } else {
                     true
                 }
@@ -448,7 +461,7 @@ impl Dungeon {
                 for d in room.doors.iter() {
 
                     // Mark all doors with small keys as unlocked
-                    if d.trigger == Trigger::SmallKey {
+                    if d.lock == DoorLock::SmallKey {
                         if unlocked_doors.contains_key(&d) == false {
                             unlocked_doors.insert(*d, true);
                             doors_unlocked += 1;
@@ -462,7 +475,7 @@ impl Dungeon {
             // the doors
             let mut empty_rooms: Vec<_> = rooms.iter().cloned().filter(|offset| {
                 let room = self.rooms.get(offset).unwrap();
-                room.key.is_none() && room.enemy.is_none()
+                room.chest.is_none() && room.enemy.is_none() && room.switch.is_none()
 
             }).collect();
 
@@ -491,13 +504,12 @@ impl Dungeon {
                 }
 
                 key_distances.insert(*offset, min_key_distance);
-                println!("min_key_distance: {}", min_key_distance);
 
             }
 
             // 3. Split between end rooms (not entrance(!)) and all others
-            let (mut ends, mut empty_rooms): (Vec<_>, Vec<_>) = empty_rooms.into_iter().partition(|offset| {
-                self.rooms.get(offset).unwrap().typ == room::Type::End
+            let (mut ends, empty_rooms): (Vec<_>, Vec<_>) = empty_rooms.into_iter().partition(|offset| {
+                self.rooms.get(offset).unwrap().typ == RoomType::End
             });
 
             // 4. Split out rooms which are close to other rooms with keys and
@@ -518,13 +530,56 @@ impl Dungeon {
             }
 
             // 7. Now place the keys in the first rooms from the list
+            let mut key_triggers = vec![
+                // TODO use enum
+                0,
+                1,
+                1,
+                1,
+                2,
+                2,
+                2,
+                2
+            ];
+
             for i in 0..doors_unlocked {
                 let mut room = self.rooms.get_mut(empty_rooms.get(i).unwrap()).unwrap();
-                room.key = Some(key::Key {
-                    trigger: Trigger::Chest, // TODO Select a random trigger
-                    typ: key::Type::Small
-                });
+
+                // Select a random trigger
+                rng.shuffle(&mut key_triggers);
+                match key_triggers[0] {
+                    0 => {
+                        room.chest = Some(Chest {
+                            item: Item::Key(Key::Small)
+                        })
+                    },
+                    1 => {
+                        room.switch = Some(Switch {
+                            trigger: Trigger {
+                                door: None,
+                                key: Some(Key::Small),
+                                stored: false // TODO random chance that the switch stays down?
+                            }
+                        })
+                    },
+                    2 => {
+                        room.enemy = Some(Enemy {
+                            // TODO random chance for big enemies which stay defeated
+                            typ: EnemyType::Small,
+                            // TODO either have key drop or appear via trigger
+                            item: Item::None,
+                            trigger: Trigger {
+                                door: None,
+                                key: Some(Key::Small),
+                                stored: false // TODO random chance that the enemies stay defeated?
+                            }
+                        })
+                    },
+                    _ => unreachable!()
+                }
+
                 rooms_with_key.push(room.offset);
+
             }
 
             // If we didn't find anymore doors to unlock we're done
@@ -544,7 +599,7 @@ impl Dungeon {
     fn connected_rooms<F>(
         &self, start: Offset, callback: F
 
-    ) -> Vec<Offset> where F : Fn(&room::Room, &room::Door) -> bool {
+    ) -> Vec<Offset> where F : Fn(&Room, &Door) -> bool {
 
         let mut visited: HashMap<Offset, bool> = HashMap::new();
         let mut to_visit: Vec<Offset> = vec![start];
@@ -584,13 +639,16 @@ impl Dungeon {
         let mut empty_rooms: Vec<Offset> = Vec::new();
 
         for (offset, room) in self.rooms.iter() {
-            if room.typ == room::Type::Exit {
+            if room.typ == RoomType::Exit {
                 continue;
 
             } else if let Some(_) = room.enemy {
                 continue;
 
-            } else if let Some(_) = room.key {
+            } else if let Some(_) = room.chest {
+                continue;
+
+            } else if let Some(_) = room.switch {
                 continue;
 
             } else {
@@ -614,13 +672,13 @@ impl Dungeon {
     fn find_room_path<F>(
         &self, start: Offset, callback: F
 
-    ) -> Option<room::Path> where F : Fn(&room::Room, &room::Path) -> bool {
+    ) -> Option<RoomPath> where F : Fn(&Room, &RoomPath) -> bool {
 
-        let mut to_path = room::Path::new();
+        let mut to_path = RoomPath::new();
         to_path.push(start);
 
         let mut visited: HashMap<Offset, bool> = HashMap::new();
-        let mut to_visit: Vec<(Offset, room::Path)> = vec![(start, to_path)];
+        let mut to_visit: Vec<(Offset, RoomPath)> = vec![(start, to_path)];
         while to_visit.len() > 0 {
 
             // Add current room to visited list
@@ -649,42 +707,47 @@ impl Dungeon {
 
     }
 
-    fn boss_key_path(&self) -> room::Path {
+    fn boss_key_path(&self) -> RoomPath {
 
         // Get path from entrance to boss key
         self.find_room_path(self.entrance_room.unwrap(), |room, _| {
-            match &room.key {
-                &Some(ref key) => {
-                    key.typ == key::Type::Boss
-                },
-                &None => false
+            if let Some(ref chest) = room.chest {
+                match &chest.item {
+                    &Item::Key(ref key_typ) => {
+                        *key_typ == Key::Boss
+                    },
+                    _ => false
+                }
+
+            } else {
+                false
             }
 
         }).unwrap()
 
     }
 
-    fn boss_door_path(&self) -> room::Path {
+    fn boss_door_path(&self) -> RoomPath {
 
         // Get path from entrance to boss room
         self.find_room_path(self.entrance_room.unwrap(), |room, _| {
-            match &room.enemy {
-                &Some(ref enemy) => {
-                    *enemy == Enemy::Boss
-                },
-                &None => false
+            if let Some(ref enemy) = room.enemy {
+                enemy.typ == EnemyType::Boss
+
+            } else {
+                false
             }
 
         }).unwrap()
 
     }
 
-    fn end_room_paths(&mut self) -> Vec<room::Path> {
+    fn end_room_paths(&mut self) -> Vec<RoomPath> {
 
         // Collect all end rooms
         let mut end_rooms = Vec::new();
         for (offset, room) in self.rooms.iter_mut() {
-            if room.typ == room::Type::End {
+            if room.typ == RoomType::End {
                 end_rooms.push(*offset);
             }
         }
@@ -695,7 +758,7 @@ impl Dungeon {
             (a.x + a.y * 1000).cmp(&(b.x + b.y * 1000))
         });
 
-        let mut paths: Vec<room::Path> = Vec::new();
+        let mut paths: Vec<RoomPath> = Vec::new();
         for offset in end_rooms.iter() {
 
             // Collect paths from all end rooms to the first intersection
@@ -703,8 +766,7 @@ impl Dungeon {
 
                 // TODO this does not handle cases where there are no
                 // intersections but just one linear dungeon hallway
-                room.typ == room::Type::Intersection
-                || room.typ == room::Type::Crossing
+                room.typ == RoomType::Intersection || room.typ == RoomType::Crossing
             });
 
             match path {

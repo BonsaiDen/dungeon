@@ -6,8 +6,6 @@ use dungeon::room;
 pub struct Renderer {
     sx: usize,
     sy: usize,
-    ox: i32,
-    oy: i32,
     width: usize,
     height: usize,
     buffer: Vec<char>
@@ -42,8 +40,6 @@ impl Renderer {
             let mut renderer = Renderer::new(
                 width as usize,
                 height as usize,
-                min.x,
-                min.y,
                 19,
                 8
             );
@@ -73,7 +69,6 @@ impl Renderer {
     //
     fn new(
         width: usize, height: usize,
-        ox: i32, oy: i32,
         sx: usize, sy: usize
 
     ) -> Renderer {
@@ -87,8 +82,6 @@ impl Renderer {
         Renderer {
             sx: sx,
             sy: sy,
-            ox: ox,
-            oy: oy,
             width: width,
             height: height,
             buffer: buffer
@@ -98,8 +91,8 @@ impl Renderer {
 
     fn draw_room(&mut self, room: &room::Room) {
 
-        let x = (room.offset.x - self.ox) as usize;
-        let y = (room.offset.y - self.oy) as usize;
+        let x = room.offset.x as usize;
+        let y = room.offset.y as usize;
         let (sx, sy) = (self.sx, self.sy);
 
         // Lines
@@ -117,51 +110,58 @@ impl Renderer {
         // Doors
         for d in room.doors.iter() {
             self.draw_door(
-                room.offset.x, room.offset.y, &d.side, d.trigger.to_char()
+                room.offset.x, room.offset.y, &d.side, d.lock.to_char()
             );
         }
 
         // Room Types
+        let mut y_offset = 1;
         match room.typ {
             room::Type::Exit | room::Type::Entrance => {
                 self.draw_text(
                     room.offset.x, room.offset.y,
-                    1, 1,
+                    1, y_offset,
                     &room.typ.to_string()[..]
                 );
+                y_offset += 1;
             },
             _ => {}
         }
 
-        // Keys
-        match room.key {
-            Some(_) => {
-                self.draw_text(
-                    room.offset.x, room.offset.y,
-                    1, 2,
-                    &room.key.as_ref().unwrap().to_string()[..]
-                );
-            },
-            None => {}
+        // Chest
+        if let Some(ref chest) = room.chest {
+            self.draw_text(
+                room.offset.x, room.offset.y,
+                1, y_offset,
+                &chest.to_string()[..]
+            );
+            y_offset += 1;
         }
 
-        // Enemies
-        match room.enemy {
-            Some(_) => {
-                self.draw_text(
-                    room.offset.x, room.offset.y,
-                    1, 3,
-                    &room.enemy.as_ref().unwrap().to_string()[..]
-                );
-            },
-            None => {}
+        // Enemy
+        if let Some(ref enemy) = room.enemy {
+            self.draw_text(
+                room.offset.x, room.offset.y,
+                1, y_offset,
+                &enemy.to_string()[..]
+            );
+            y_offset += 1;
+        }
+
+        // Switch
+        if let Some(ref switch) = room.switch {
+            self.draw_text(
+                room.offset.x, room.offset.y,
+                1, y_offset,
+                &switch.to_string()[..]
+            );
         }
 
     }
 
     fn draw_door(&mut self, x: i32, y: i32, d: &Side, m: char) {
 
-        let (x, y) = ((x - self.ox) as usize, (y - self.oy) as usize);
+        let (x, y) = (x as usize, y as usize);
         let (sx, sy) = (self.sx, self.sy);
 
         match *d {
@@ -191,7 +191,7 @@ impl Renderer {
 
     fn draw_text(&mut self, x: i32, y: i32, ox: usize, oy: usize, text: &str) {
 
-        let (x, y) = ((x - self.ox) as usize, (y - self.oy) as usize);
+        let (x, y) = (x as usize, y as usize);
         let (sx, sy) = (self.sx, self.sy);
 
         for (index, t) in text.chars().enumerate() {
