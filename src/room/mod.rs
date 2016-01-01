@@ -7,13 +7,6 @@ pub mod door;
 pub mod path;
 pub use self::path::Path;
 
-/*
-use std::ops::{Deref, DerefMut};
-
-use loot::{Chest, Enemy, Switch};
-
-*/
-
 #[derive(Debug, Eq, PartialEq)]
 pub enum Type {
     None,
@@ -83,8 +76,8 @@ impl Room {
         self.doors.push(door::Door {
             side: Side::from_offsets(&self.offset, &other.offset),
             lock: door::Lock::None,
-            from: self.offset,
-            to: other.offset
+            to: other.offset,
+            triggers: Vec::new()
         })
     }
 

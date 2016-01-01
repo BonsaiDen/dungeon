@@ -217,7 +217,6 @@ impl Dungeon {
 
             // Update all door offsets
             for d in room.doors.iter_mut() {
-                d.from = d.from - min;
                 d.to = d.to - min;
             }
 
@@ -272,16 +271,13 @@ impl Dungeon {
                 println!("Fatal: boss room may not be a intersection");
                 return false;
             }
+            // TODO add trigger to close entry door when entering
+            // e.g. when entering a room via a specific door, close the door
             boss_room.enemy = Some(Enemy {
                 typ: EnemyType::Boss,
-                item: Item::None,
-                trigger: Trigger {
-                    // TODO lock door to exit room and add trigger to boss to open it
-                    door: None,
-                    key: None,
-                    stored: true // Boss triggers are permanene
-                }
+                triggers: vec![/*Trigger::OpenDoor()*/] // TODO trigger opening of exit door
             });
+            // TODO find door to exit room and lock it
             self.boss_room = Some(boss_room.offset);
 
         }
@@ -421,14 +417,14 @@ impl Dungeon {
     fn set_locked_keys(&mut self, rng: &mut StdRng) -> bool {
 
         // Keep track of the doors that we have unlocked
-        let mut unlocked_doors: HashMap<Door, bool> = HashMap::new();
+        let mut unlocked_doors: HashMap<(Offset, Offset), bool> = HashMap::new();
         let mut rooms_with_key: Vec<Offset> = Vec::new();
 
         loop {
 
             // Now search through the dungeon startin from the entrance and find
             // all reachable rooms before any locked doors
-            let rooms = self.connected_rooms(self.entrance_room.unwrap(), |_, door| {
+            let rooms = self.connected_rooms(self.entrance_room.unwrap(), |room, door| {
 
                 // Always stop at the boss door
                 if door.lock == DoorLock::BossKey {
@@ -439,7 +435,7 @@ impl Dungeon {
 
                     // See if we already unlocked it, if so we can continue
                     // with the room behind it
-                    if unlocked_doors.contains_key(&door) {
+                    if unlocked_doors.contains_key(&(room.offset, door.to)) {
                         true
 
                     // Otherwise we stop here
@@ -462,8 +458,8 @@ impl Dungeon {
 
                     // Mark all doors with small keys as unlocked
                     if d.lock == DoorLock::SmallKey {
-                        if unlocked_doors.contains_key(&d) == false {
-                            unlocked_doors.insert(*d, true);
+                        if unlocked_doors.contains_key(&(*offset, d.to)) == false {
+                            unlocked_doors.insert((*offset, d.to), true);
                             doors_unlocked += 1;
                         }
                     }
@@ -547,6 +543,8 @@ impl Dungeon {
 
                 // Select a random trigger
                 rng.shuffle(&mut key_triggers);
+
+                // TODO create trigger sets
                 match key_triggers[0] {
                     0 => {
                         room.chest = Some(Chest {
@@ -555,24 +553,18 @@ impl Dungeon {
                     },
                     1 => {
                         room.switch = Some(Switch {
-                            trigger: Trigger {
-                                door: None,
-                                key: Some(Key::Small),
-                                stored: false // TODO random chance that the switch stays down?
-                            }
+                            // TODO chance of either dropping key or spawning chest with key
+                            triggers: vec![Trigger::Item(Item::Key(Key::Small))]
                         })
                     },
                     2 => {
+                        // TODO random chance for locking the door behind on entry and unlocking
+                        // once enemies are defeated
                         room.enemy = Some(Enemy {
-                            // TODO random chance for big enemies which stay defeated
                             typ: EnemyType::Small,
-                            // TODO either have key drop or appear via trigger
-                            item: Item::None,
-                            trigger: Trigger {
-                                door: None,
-                                key: Some(Key::Small),
-                                stored: false // TODO random chance that the enemies stay defeated?
-                            }
+                            // TODO random chance for big enemies which stay defeated?
+                            // TODO chance of either dropping key or spawning chest with key
+                            triggers: vec![Trigger::Item(Item::Key(Key::Small))]
                         })
                     },
                     _ => unreachable!()

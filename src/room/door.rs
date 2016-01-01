@@ -1,6 +1,7 @@
 use base::{Side, Offset};
+use entity::trigger::Trigger;
 
-#[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum Lock {
     BossKey,
     SmallKey,
@@ -21,11 +22,11 @@ impl Lock {
 
 }
 
-#[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
+#[derive(Debug)]
 pub struct Door {
     pub side: Side,
     pub lock: Lock,
-    pub from: Offset,
-    pub to: Offset
+    pub to: Offset,
+    pub triggers: Vec<Trigger>
 }
 
