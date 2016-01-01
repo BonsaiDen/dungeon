@@ -1,4 +1,6 @@
 extern crate rand;
+
+use std::cmp;
 use std::collections::HashMap;
 use self::rand::{Rng, SeedableRng, StdRng};
 
@@ -65,21 +67,16 @@ impl Dungeon {
 
         } else if self.set_locked_doors(rng) == false {
             return false;
+
+        } else if self.set_locked_keys(rng) == false {
+            return false;
+
+        } else {
+            // TODO place compass / map
+            // TODO Create some additional interconnections of
+            // adjacent AND inter-reachable rooms
+            true
         }
-
-        // TODO from the entrance find all accessible locked doors
-            // - place keys in the empty, accessible rooms infront of them
-                // - prioritize end rooms for key placement
-                    // - remove some rooms from the set of empty rooms but not the end rooms
-                    // - then shuffle set set and use the first X to
-                // - mark the found doors as done
-
-            // - find the next set of accessible doors
-        // - continue until no more locked doors are left
-
-
-        // TODO Create some additional interconnections of adjacent AND inter-reachable rooms
-        true
 
     }
 
@@ -90,6 +87,7 @@ impl Dungeon {
         let mut hall_length = rng.gen_range(1, max_corridor_length);
         let mut offset = Offset::default();
         let mut room_stack = room::Path::new();
+        let mut rooms: HashMap<Offset, room::Room> = HashMap::new();
 
         // Try to generate the requested number of rooms
         let mut index = 0;
@@ -116,7 +114,7 @@ impl Dungeon {
                 // Check if there is already a room if we go to the current
                 // side
                 let mut next_offset = offset + next_dir.to_offset();
-                if self.rooms.contains_key(&next_offset) {
+                if rooms.contains_key(&next_offset) {
 
                     next_dir = Side::None;
 
@@ -127,7 +125,7 @@ impl Dungeon {
 
                     for d in sides.iter() {
                         next_offset = offset + d.to_offset();
-                        if self.rooms.contains_key(&next_offset) == false{
+                        if rooms.contains_key(&next_offset) == false{
                             next_dir = d.clone();
                             break;
                         }
@@ -161,14 +159,14 @@ impl Dungeon {
                 let mut room = room::Room::new(offset.x, offset.y);
                 match room_stack.last() {
                     Some(offset) => {
-                        let other = self.rooms.get_mut(&offset).unwrap();
+                        let other = rooms.get_mut(&offset).unwrap();
                         room.add_door_to(&other);
                         other.add_door_to(&room);
                     },
                     None => {}
                 }
 
-                self.rooms.insert(offset, room);
+                rooms.insert(offset, room);
                 room_stack.push(offset);
                 index += 1;
 
@@ -192,7 +190,7 @@ impl Dungeon {
         // TODO fail if we couldn't generate the desired number of rooms?
 
         // Set room connection types
-        for (_, room) in self.rooms.iter_mut() {
+        for (_, room) in rooms.iter_mut() {
             room.typ = match room.doors.len() {
                 1 => room::Type::End,
                 2 => room::Type::Hallway,
@@ -200,6 +198,28 @@ impl Dungeon {
                 4 => room::Type::Crossing,
                 _ => room::Type::Invalid
             };
+        }
+
+        // Calculate bounds
+        let mut min = Offset { x: 9999, y: 9999 };
+        for (offset, _) in rooms.iter() {
+            min.x = cmp::min(offset.x, min.x);
+            min.y = cmp::min(offset.y, min.y);
+        }
+
+        // Translate all rooms so 0,0 is the top left border of the dungeon
+        for (_, mut room) in rooms.into_iter() {
+
+            // Update all door offsets
+            for d in room.doors.iter_mut() {
+                d.from = d.from - min;
+                d.to = d.to - min;
+            }
+
+            // Translate offset and insert into dungeon room map
+            room.offset = room.offset - min;
+            self.rooms.insert(room.offset, room);
+
         }
 
     }
@@ -385,12 +405,178 @@ impl Dungeon {
 
     }
 
+    fn set_locked_keys(&mut self, rng: &mut StdRng) -> bool {
+
+        // Keep track of the doors that we have unlocked
+        let mut unlocked_doors: HashMap<room::Door, bool> = HashMap::new();
+        let mut rooms_with_key: Vec<Offset> = Vec::new();
+
+        loop {
+
+            // Now search through the dungeon startin from the entrance and find
+            // all reachable rooms before any locked doors
+            let rooms = self.connected_rooms(self.entrance_room.unwrap(), |_, door| {
+
+                // Always stop at the boss door
+                if door.trigger == Trigger::BossKey {
+                    true
+
+                // See if the door is locked
+                } else if door.trigger == Trigger::SmallKey {
+
+                    // See if we already unlocked it, if so we can continue
+                    // with the room behind it
+                    if unlocked_doors.contains_key(&door) {
+                        true
+
+                    // Otherwise we stop here
+                    } else {
+                        false
+                    }
+
+                // For all open doors visiti the room behind them
+                } else {
+                    true
+                }
+
+            });
+
+            // Go through all rooms and mark all doors from them as unlocked
+            let mut doors_unlocked = 0;
+            for offset in rooms.iter() {
+                let room = self.rooms.get(&offset).unwrap();
+                for d in room.doors.iter() {
+
+                    // Mark all doors with small keys as unlocked
+                    if d.trigger == Trigger::SmallKey {
+                        if unlocked_doors.contains_key(&d) == false {
+                            unlocked_doors.insert(*d, true);
+                            doors_unlocked += 1;
+                        }
+                    }
+
+                }
+            }
+
+            // Get all empty rooms from the set of rooms we found infront of
+            // the doors
+            let mut empty_rooms: Vec<_> = rooms.iter().cloned().filter(|offset| {
+                let room = self.rooms.get(offset).unwrap();
+                room.key.is_none() && room.enemy.is_none()
+
+            }).collect();
+
+            // Check if we have enough empty rooms to place the required keys in
+            if empty_rooms.len() < doors_unlocked {
+                println!("Not enough empty rooms to place small keys in");
+                return false;
+            }
+
+            // 1. Randomize rooms to use for key placement
+            rng.shuffle(&mut empty_rooms);
+
+            // 2. Calculate room distance to the next room which contains a key
+            let mut key_distances: HashMap<Offset, usize> = HashMap::new();
+            for offset in empty_rooms.iter() {
+
+                // Find the distances from the current empty room to all rooms
+                // which already contain keys
+                let mut min_key_distance = 9999;
+                for key in rooms_with_key.iter() {
+                    let path = self.find_room_path(*offset, |room, _| {
+                        room.offset == *key
+
+                    }).unwrap();
+                    min_key_distance = cmp::min(min_key_distance, path.len() - 1);
+                }
+
+                key_distances.insert(*offset, min_key_distance);
+                println!("min_key_distance: {}", min_key_distance);
+
+            }
+
+            // 3. Split between end rooms (not entrance(!)) and all others
+            let (mut ends, mut empty_rooms): (Vec<_>, Vec<_>) = empty_rooms.into_iter().partition(|offset| {
+                self.rooms.get(offset).unwrap().typ == room::Type::End
+            });
+
+            // 4. Split out rooms which are close to other rooms with keys and
+            // move them to the back of the list
+            let (mut close_to_keys, mut empty_rooms): (Vec<_>, Vec<_>) = empty_rooms.into_iter().partition(|offset| {
+                *key_distances.get(&offset).unwrap() < 2
+            });
+
+            // 5. Merge them back together
+            empty_rooms.append(&mut close_to_keys);
+
+            // 6. Take the first end room (if any) and put it back
+            match ends.pop() {
+                Some(offset) => {
+                    empty_rooms.insert(0, offset);
+                },
+                None => {}
+            }
+
+            // 7. Now place the keys in the first rooms from the list
+            for i in 0..doors_unlocked {
+                let mut room = self.rooms.get_mut(empty_rooms.get(i).unwrap()).unwrap();
+                room.key = Some(key::Key {
+                    trigger: Trigger::Chest, // TODO Select a random trigger
+                    typ: key::Type::Small
+                });
+                rooms_with_key.push(room.offset);
+            }
+
+            // If we didn't find anymore doors to unlock we're done
+            if doors_unlocked == 0 {
+                break;
+            }
+
+        }
+
+        true
+
+    }
+
 
     // Room collection methods ------------------------------------------------
 
-    fn connected_rooms(&self) -> Vec<Offset> {
-        // TODO method for getting a list of connected rooms by checking the doors
-        Vec::new()
+    fn connected_rooms<F>(
+        &self, start: Offset, callback: F
+
+    ) -> Vec<Offset> where F : Fn(&room::Room, &room::Door) -> bool {
+
+        let mut visited: HashMap<Offset, bool> = HashMap::new();
+        let mut to_visit: Vec<Offset> = vec![start];
+
+        let mut rooms = Vec::new();
+        while to_visit.len() > 0 {
+
+            // Get next room to visit
+            let offset = to_visit.remove(0);
+            let room = self.rooms.get(&offset).unwrap();
+
+            // Add current room to visited list
+            visited.insert(offset, true);
+            rooms.push(offset);
+
+            // Add all connected rooms to the to_visit list
+            for d in room.doors.iter() {
+                if visited.contains_key(&d.to) == false  {
+
+                    // Invoke callback and add the room behind the door
+                    if callback(&room, &d) == true {
+                        to_visit.push(d.to);
+                        visited.insert(d.to, true);
+                    }
+
+                }
+            }
+
+        }
+
+        rooms
+
     }
 
     fn empty_rooms(&self) -> Vec<Offset> {

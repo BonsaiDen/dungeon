@@ -1,4 +1,4 @@
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
 pub enum Trigger {
     None,
     Pot,

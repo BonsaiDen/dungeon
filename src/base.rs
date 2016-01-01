@@ -1,6 +1,6 @@
-use std::ops::Add;
+use std::ops::{Add, Sub};
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
 pub enum Side {
     North = 0,
     East = 1,
@@ -80,6 +80,17 @@ impl Add for Offset {
         Offset {
             x: self.x + other.x,
             y: self.y + other.y
+        }
+    }
+}
+
+impl Sub for Offset {
+    type Output = Offset;
+
+    fn sub(self, other: Offset) -> Offset {
+        Offset {
+            x: self.x - other.x,
+            y: self.y - other.y
         }
     }
 }

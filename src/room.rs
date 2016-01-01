@@ -33,7 +33,7 @@ impl Type {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
 pub struct Door {
     pub side: Side,
     pub trigger: Trigger,
