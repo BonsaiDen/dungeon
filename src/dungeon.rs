@@ -1,8 +1,6 @@
-extern crate rand;
-
 use std::cmp;
 use std::collections::HashMap;
-use self::rand::{Rng, SeedableRng, StdRng};
+use rand::{Rng, SeedableRng, StdRng};
 
 use base::{Side, Offset};
 use room::{Room, Path as RoomPath, Type as RoomType};
@@ -271,13 +269,33 @@ impl Dungeon {
                 println!("Fatal: boss room may not be a intersection");
                 return false;
             }
-            // TODO add trigger to close entry door when entering
-            // e.g. when entering a room via a specific door, close the door
+
+            let exit_offset = self.exit_room.unwrap();
+
+            // Create Boss
             boss_room.enemy = Some(Enemy {
                 typ: EnemyType::Boss,
-                triggers: vec![/*Trigger::OpenDoor()*/] // TODO trigger opening of exit door
+                triggers: vec![
+                    // Open door to exit once boss is defeated
+                    Trigger::OpenDoor(exit_offset)
+                ]
             });
-            // TODO find door to exit room and lock it
+
+            // Setup both doors
+            for door in boss_room.doors.iter_mut() {
+
+                // Lock door to exit
+                if door.to == exit_offset {
+                    door.lock = DoorLock::Trigger;
+
+                // Lock entry door upon entrance
+                } else {
+                    door.lock = DoorLock::Trigger;
+                    door.triggers.push(Trigger::LockDoor(door.to));
+                }
+
+            }
+
             self.boss_room = Some(boss_room.offset);
 
         }

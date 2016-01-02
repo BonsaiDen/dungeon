@@ -10,3 +10,9 @@ rand = "0.3.0"
 name = "dungeon"
 path = "src/lib.rs"
 
+[dev-dependencies]
+allegro = "0.0.22"
+allegro-sys = "0.0.22"
+allegro_primitives = "0.0.22"
+allegro_font = "0.0.22"
+

@@ -1,9 +1,11 @@
-extern crate dungeon;
 use std::cmp;
+
+use renderer::Renderer;
+use dungeon;
 use dungeon::base::{Offset, Side};
 use dungeon::room;
 
-pub struct Renderer {
+pub struct AsciiRenderer {
     sx: usize,
     sy: usize,
     width: usize,
@@ -11,9 +13,9 @@ pub struct Renderer {
     buffer: Vec<char>
 }
 
-impl Renderer {
+impl Renderer for AsciiRenderer {
 
-    pub fn from_dungeon(dungeon: &dungeon::Dungeon) -> Option<Renderer> {
+    fn from_dungeon(dungeon: &dungeon::Dungeon) -> Option<Box<Renderer>> {
 
         // Print Statistics
         println!("Dungeon with {} rooms", dungeon.rooms.len());
@@ -37,7 +39,7 @@ impl Renderer {
                 ((max.y - min.y) + 1)
             );
 
-            let mut renderer = Renderer::new(
+            let mut renderer = AsciiRenderer::new(
                 width as usize,
                 height as usize,
                 19,
@@ -49,7 +51,7 @@ impl Renderer {
                 renderer.draw_room(room);
             }
 
-            Some(renderer)
+            Some(Box::new(renderer))
 
         } else {
             None
@@ -57,7 +59,7 @@ impl Renderer {
 
     }
 
-    pub fn draw(&self) {
+    fn draw(&self) {
         for y in 0..self.height * self.sy {
             let offset = y * self.width * self.sx;
             let line = &self.buffer[offset..(offset + self.width * self.sx)];
@@ -65,13 +67,15 @@ impl Renderer {
         }
     }
 
-    // Internal ---------------------------------------------------------------
-    //
+}
+
+impl AsciiRenderer {
+
     fn new(
         width: usize, height: usize,
         sx: usize, sy: usize
 
-    ) -> Renderer {
+    ) -> AsciiRenderer {
 
         let size = width * sx * height * sy;
         let mut buffer: Vec<char> = Vec::with_capacity(size);
@@ -79,7 +83,7 @@ impl Renderer {
             buffer.push(b' ' as char);
         }
 
-        Renderer {
+        AsciiRenderer {
             sx: sx,
             sy: sy,
             width: width,
@@ -115,7 +119,7 @@ impl Renderer {
         }
 
         // Room Types
-        let mut y_offset = 1;
+        let mut y_offset = 2;
         match room.typ {
             room::Type::Exit | room::Type::Entrance => {
                 self.draw_text(

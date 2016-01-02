@@ -1,3 +1,5 @@
+extern crate rand;
+
 pub mod entity;
 pub mod room;
 pub mod base;
